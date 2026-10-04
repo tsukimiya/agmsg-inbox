@@ -1,0 +1,11 @@
+{
+  "name": "tsukimiya",
+  "owner": { "name": "tsukimiya" },
+  "plugins": [
+    {
+      "name": "agmsg-inbox",
+      "source": "./",
+      "description": "Deliver the agmsg inbox to Claude Code through a mod-owned watch.sh instead of the Monitor tool"
+    }
+  ]
+}

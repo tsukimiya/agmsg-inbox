@@ -1,0 +1,8 @@
+{
+  "name": "agmsg-inbox",
+  "version": "0.1.0",
+  "description": "Deliver the agmsg inbox to Claude Code through a mod-owned watch.sh instead of the Monitor tool (no 30-minute re-arm)",
+  "author": { "name": "tsukimiya" },
+  "repository": "https://github.com/tsukimiya/agmsg-inbox",
+  "license": "MIT"
+}
