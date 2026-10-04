@@ -2,7 +2,7 @@
 
 [agmsg](https://github.com/fujibee/agmsg) の inbox を、Monitor ツールを使わずに Claude Code のセッションへ届ける [Claude Code mod](https://code.claude.com/docs/ja/plugins/mods/overview) です。
 
-状態: [fujibee/agmsg#1559](https://github.com/fujibee/agmsg/issues/1559) のための**実験的な PoC** です。単体テストは通っていて、実機での検証を進めています。
+状態: [fujibee/agmsg#1559](https://github.com/fujibee/agmsg/issues/1559) のための**実験的な PoC** です。1 台の環境で実機検証しました（[検証結果](#検証結果)）。
 
 ## 作った理由
 
@@ -17,13 +17,26 @@ mod は Claude Code のプロセスの中で動きます。`$.process.spawn` で
 
 ## 仕組み
 
-1. `classic.SessionStart` で、agmsg 自身の SessionStart hook を先に動かす。その `additionalContext` から Monitor の directive を探し、`watch.sh` の起動コマンドを取り出す。Monitor の上限のためだけにある `--max-seconds` は外す。directive は「Monitor を起動しないこと」という 1 行に差し替える
-2. そのコマンドを `$.process.spawn` で起動し、セッションのあいだ動かし続ける
+1. agmsg の SessionStart hook が、これまでどおりモデルに `watch.sh` の Monitor を起動するよう指示する
+2. `Monitor` の `tool.call` で、agmsg の呼び出し（description が `agmsg inbox stream` で始まり、コマンドが `scripts/watch.sh` を動かすもの）だけを、Monitor ツールの代わりに mod が受ける。同じコマンドを、Monitor の上限のためだけにある `--max-seconds` を外して `$.process.spawn` で起動する。モデルには Monitor の結果の形で返し、張り直しが要らないことを書き添える
 3. stdout のうち `<ts> | <team> | <from> → <to> | <body>` の形の行だけを、`$.prompt.submit` でモデルに渡す。状態行（`agmsg watch: ...`）と stderr は debug ログに回す
-4. `Monitor` の `tool.call` では、mod の watcher が動いているあいだ、agmsg の `watch.sh` を起動しようとする Monitor 呼び出しを拒否する。こうして 1 つの席に配達経路を 1 本だけにする。mod が受け取りに失敗したときは、Monitor 配信をそのまま残す
-5. `session.end` で watcher を止める
+4. `/clear` や resume のあとで agmsg の Monitor 呼び出しがもう一度来たら、動いている watcher を置き換える。`session.end` で止める
 
-agmsg 自体には手を入れていません。セッション ID、役割の再開、席の所有は、これまでどおり agmsg の `session-start.sh` が決めます。mod が変えるのは「誰がコマンドを動かすか」だけです。
+agmsg 自体には手を入れていません。セッション ID、役割の再開、席の所有は、これまでどおり agmsg の `session-start.sh` が決めます。コマンドは Monitor 呼び出しの引数から受け取るので、directive の文面は解析しません。
+
+セッションの開始時には、今もモデルが Monitor を 1 回呼びます。`classic.SessionStart` の hook で directive を書き換えればこの 1 回も無くせますが、組織（Team プラン）では組み込みの `cc-plugin-sec-default` が一番外側に置かれ、この mod の `classic.SessionStart` hook を飛ばしました（debug ログに `classic.SessionStart bypassed by cc-plugin-sec-default (tier user)`）。そのため、この方式には頼っていません。
+
+## 検証結果
+
+Claude Code 2.1.289（CLI、Team プラン、WSL2、herdr のペイン）、agmsg 1.5.2、`delivery set monitor`、受信側の席は 1 つで確かめました。
+
+| 確認したこと | 結果 |
+| --- | --- |
+| agmsg の Monitor 呼び出しを mod が受ける | debug ログに `tool.call Monitor ...: resolved by a hooks module (result)`。画面には `Monitor started · task agmsg-inbox · persistent` |
+| `--max-seconds` なしで watcher が動く | セッションに `watch.sh` のプロセスが 1 つ |
+| 待機中の配達 | `send.sh` から 3〜5 秒（5 秒間隔のポーリング）でモデルに届き、モデルが返信した |
+| 作業中の配達 | 45 秒かかるフォアグラウンドのコマンドの最中に送ったメッセージは、割り込まずにキューに入り、そのターンが終わってから処理された |
+| Monitor の 30 分上限を過ぎた後 | 32 分の時点で同じ watcher のプロセスが動いていて、そのとき送ったメッセージも届いて返信があった。その間に張り直しのターンは 1 回も無かった |
 
 ## 動作条件
 
@@ -45,10 +58,12 @@ claude --plugin-dir /path/to/agmsg-inbox
 
 ## 既知の制限
 
-- コマンドは directive の文面（`command: ...`）から読み取っている。agmsg の文言が変わると受け取りに失敗する。その場合 mod は何もせず、Monitor 配信が続く。`session-start.sh` が機械で読める 1 行を出すようになれば、この依存は無くなる
+- 横取りの判定には、Monitor の description `agmsg inbox stream` と、コマンド中の `scripts/watch.sh` を使っている。agmsg がどちらかを変えると mod は呼び出しをそのまま通し、これまでどおり Monitor で配達される
+- watcher は TaskList に出ない。agmsg の directive は TaskList を成功の確認方法に挙げているので、結果に添える説明でモデルにそのことを伝えている
 - 1 通につき 1 回のプロンプトになる。続けて届いたメッセージをまとめることはしない
 - `watch.sh` は行を出力した時点で既読カーソルを進めるが、`$.prompt.submit` はセッションが待機状態になるまで待つ。そのため、モデルが読む前に配達済みとして扱われる
-- mod をホットリロードすると、次の SessionStart（`/clear`、resume、新しいセッション）まで watcher が止まる
+- plugin からのメッセージは「The agmsg-inbox plugin sent a message:」と表示され、それ自体で 1 回のターンになる
+- mod をホットリロードすると、モデルがもう一度 agmsg の Monitor を呼ぶ（`/clear`、resume、新しいセッション）まで watcher が止まる
 
 ## 開発
 
