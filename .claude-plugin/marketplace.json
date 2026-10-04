@@ -1,6 +1,9 @@
 {
   "name": "tsukimiya",
-  "owner": { "name": "tsukimiya" },
+  "description": "tsukimiya's Claude Code plugins",
+  "owner": {
+    "name": "tsukimiya"
+  },
   "plugins": [
     {
       "name": "agmsg-inbox",
