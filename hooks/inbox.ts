@@ -1,17 +1,11 @@
-// agmsg の SessionStart directive（scripts/session-start.sh の heredoc）の始まりと終わりの文言。
-// 単一席の経路も役割再開の経路も "AGMSG monitor mode:" で始まり "directive replaces it." で終わる
-const DIRECTIVE = /AGMSG monitor mode:[\s\S]*?directive replaces it\.\n?/
 const MESSAGE = /^[^|]+ \| [^|]+ \| [^|]+ → [^|]+ \| /
 
-export type Takeover = { command: string; context: string }
-
-// directive から watch.sh の起動コマンドを取り出し、directive 部分を note に置き換える。
-// --max-seconds は Monitor の 30 分上限に合わせた自己終了なので、mod から起動するときは外す
-export function takeOverDirective(context: string, note: string): Takeover | undefined {
-  const block = context.match(DIRECTIVE)?.[0]
-  const command = block?.match(/^\s*command: (.+)$/m)?.[1]
-  if (!block || !command) return undefined
-  return { command: command.replace(/\s+--max-seconds=\d+/, ''), context: context.replace(block, note) }
+// agmsg の SessionStart directive が指示する Monitor 呼び出し（description は役割再開時に
+// "agmsg inbox stream (acting as <name>)" になる）なら、mod で起動するコマンドを返す。
+// --max-seconds は Monitor の 30 分上限に合わせた自己終了なので外す
+export function watchCommand(input: { description?: string; command?: string }): string | undefined {
+  if (!input.description?.startsWith('agmsg inbox stream') || !input.command?.includes('/scripts/watch.sh')) return undefined
+  return input.command.replace(/\s+--max-seconds=\d+/, '')
 }
 
 export const isMessage = (line: string) => MESSAGE.test(line)
