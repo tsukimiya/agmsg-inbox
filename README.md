@@ -37,6 +37,7 @@ Claude Code 2.1.289 (CLI, Team plan, WSL2, herdr pane), agmsg 1.5.2, `delivery s
 | Delivery while idle | each message reached the model 3–5 s after `send.sh` (the 5 s poll) and the model replied |
 | Delivery while busy | a message sent during a 45 s foreground command was queued and handled after that turn ended, without interrupting it |
 | Past the 30-minute Monitor cap | the same watcher process was alive at 32 min, a message sent then was delivered and answered, and no re-arm turn happened in between |
+| Past the cap with `AGMSG_CC_MONITOR_KEEP_ALIVE` empty and nothing delivered | the same watcher was alive at 32 min with no message in between (where a Monitor watch would have printed `stopping`), a message sent then was delivered and answered, and the only model request in between was Claude Code's own away summary |
 
 ## Requirements
 
