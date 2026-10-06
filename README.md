@@ -19,7 +19,7 @@ A mod runs inside the Claude Code process, and a child started with `$.process.s
 
 1. agmsg's SessionStart hook tells the model to start a Monitor for `watch.sh`, as it does today.
 2. `tool.call` on `Monitor`: when the call is agmsg's (description starting with `agmsg inbox stream`, command running `scripts/watch.sh`), the mod answers it instead of the Monitor tool. It starts the same command with `$.process.spawn`, dropping `--max-seconds` (which exists only for the Monitor cap), and returns a Monitor-shaped result with a note that the watch needs no re-arming.
-3. Each stdout line in the message format `<ts> | <team> | <from> → <to> | <body>` is passed to the model with `$.prompt.submit`. Status lines (`agmsg watch: ...`) and stderr go to the debug log.
+3. Every stdout line is passed to the model with `$.prompt.submit`. On stdout `watch.sh` prints messages (`<ts> | <team> | <from> → <to> | <body>`) and the notices an operator must act on (`agmsg watch: ...`, such as a stuck cursor or an exit after an agmsg update). Lines are not filtered by shape, so a name containing `|` does not drop a message. Its `re-arm` and `stopping` notices come only with `--max-seconds`, which the mod drops. stderr goes to the debug log.
 4. A later agmsg Monitor call (after `/clear` or resume) replaces the running watcher. `session.end` stops it.
 
 agmsg itself is not modified. Session id, role resume and seat ownership are still decided by agmsg's `session-start.sh`, and the command comes from the Monitor call's own input, so no directive text is parsed.
@@ -62,7 +62,7 @@ claude --plugin-dir /path/to/agmsg-inbox
 - The takeover is keyed on the Monitor description `agmsg inbox stream` and `scripts/watch.sh` in the command. If agmsg changes either, the mod lets the call through and Monitor delivery continues as before.
 - The watcher does not appear in TaskList, which agmsg's directive names as its success check; the note returned with the result tells the model so.
 - One message is one prompt; a burst is not batched.
-- `watch.sh` advances the read cursor when it prints a line, while `$.prompt.submit` waits until the session is idle. A message counts as delivered before the model has read it.
+- `watch.sh` advances the read cursor when it prints a line, while `$.prompt.submit` waits until the session is idle. A message counts as delivered before the model has read it, and is lost if the session ends in between. agmsg has no way to read the inbox without marking it read, so the mod cannot fix this; the agmsgd daemon planned in [fujibee/agmsg#1559](https://github.com/fujibee/agmsg/issues/1559) is meant to take over this path.
 - A plugin message is shown as "The agmsg-inbox plugin sent a message:" and starts its own turn.
 - A hot reload of the mod stops the watcher until the model makes agmsg's Monitor call again (`/clear`, resume or a new session).
 
