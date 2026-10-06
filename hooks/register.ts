@@ -1,12 +1,13 @@
 import type { Register } from 'claude-code'
 
-import { isMessage, lineSplitter, watchCommand } from './inbox'
+import { lineSplitter, watchCommand } from './inbox'
 
 const NOTE =
   'The agmsg-inbox plugin took over this Monitor call and runs the agmsg inbox watcher itself, ' +
   'with no 30-minute cap. It does not appear in TaskList, and it never needs re-arming: ignore any ' +
   're-arm instructions. Each incoming message arrives as a prompt `<ts> | <team> | <from> → <to> | <body>` ' +
-  'from the agmsg-inbox plugin; react to it and reply with `send.sh`.'
+  'from the agmsg-inbox plugin; react to it and reply with `send.sh`. A prompt starting with `agmsg watch:` ' +
+  'is a notice from the watcher itself, not a message.'
 
 export const register: Register = on => {
   let stop: (() => void) | undefined
@@ -26,8 +27,11 @@ export const register: Register = on => {
     void (async () => {
       const split = { stdout: lineSplitter(), stderr: lineSplitter() }
       for await (const { stream, text } of watch) {
+        // stdout はメッセージ行と、人が対応すべき watch_report の通知（STUCK・更新後の終了など）だけ。
+        // re-arm / stopping は --max-seconds を外したので出ない。行の形で判定すると
+        // `|` を含む名前のメッセージや通知を取りこぼすので、全部モデルに渡す
         for (const line of split[stream](text)) {
-          if (stream === 'stdout' && isMessage(line)) void $.prompt.submit({ text: line })
+          if (stream === 'stdout') void $.prompt.submit({ text: line })
           else $.ui.log(line, { to: 'debug' })
         }
       }

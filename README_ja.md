@@ -19,7 +19,7 @@ mod は Claude Code のプロセスの中で動きます。`$.process.spawn` で
 
 1. agmsg の SessionStart hook が、これまでどおりモデルに `watch.sh` の Monitor を起動するよう指示する
 2. `Monitor` の `tool.call` で、agmsg の呼び出し（description が `agmsg inbox stream` で始まり、コマンドが `scripts/watch.sh` を動かすもの）だけを、Monitor ツールの代わりに mod が受ける。同じコマンドを、Monitor の上限のためだけにある `--max-seconds` を外して `$.process.spawn` で起動する。モデルには Monitor の結果の形で返し、張り直しが要らないことを書き添える
-3. stdout のうち `<ts> | <team> | <from> → <to> | <body>` の形の行だけを、`$.prompt.submit` でモデルに渡す。状態行（`agmsg watch: ...`）と stderr は debug ログに回す
+3. stdout の行をすべて `$.prompt.submit` でモデルに渡す。`watch.sh` が stdout に出すのは、メッセージ（`<ts> | <team> | <from> → <to> | <body>`）と、人が対応すべき通知（`agmsg watch: ...`。カーソルが進まなくなった、agmsg の更新で終了した、など）だけ。行の形で選り分けないので、名前に `|` を含むメッセージも落ちない。`re-arm` と `stopping` の通知は `--max-seconds` があるときだけ出るもので、mod はこれを外している。stderr は debug ログに回す
 4. `/clear` や resume のあとで agmsg の Monitor 呼び出しがもう一度来たら、動いている watcher を置き換える。`session.end` で止める
 
 agmsg 自体には手を入れていません。セッション ID、役割の再開、席の所有は、これまでどおり agmsg の `session-start.sh` が決めます。コマンドは Monitor 呼び出しの引数から受け取るので、directive の文面は解析しません。
@@ -62,7 +62,7 @@ claude --plugin-dir /path/to/agmsg-inbox
 - 横取りの判定には、Monitor の description `agmsg inbox stream` と、コマンド中の `scripts/watch.sh` を使っている。agmsg がどちらかを変えると mod は呼び出しをそのまま通し、これまでどおり Monitor で配達される
 - watcher は TaskList に出ない。agmsg の directive は TaskList を成功の確認方法に挙げているので、結果に添える説明でモデルにそのことを伝えている
 - 1 通につき 1 回のプロンプトになる。続けて届いたメッセージをまとめることはしない
-- `watch.sh` は行を出力した時点で既読カーソルを進めるが、`$.prompt.submit` はセッションが待機状態になるまで待つ。そのため、モデルが読む前に配達済みとして扱われる
+- `watch.sh` は行を出力した時点で既読カーソルを進めるが、`$.prompt.submit` はセッションが待機状態になるまで待つ。そのため、モデルが読む前に配達済みとして扱われ、その間にセッションが終わるとメッセージは失われる。agmsg には既読にせずに inbox を読む手段が無いので、mod の側では直せない。[fujibee/agmsg#1559](https://github.com/fujibee/agmsg/issues/1559) で予定されている常駐デーモン agmsgd がこの経路を置き換える予定
 - plugin からのメッセージは「The agmsg-inbox plugin sent a message:」と表示され、それ自体で 1 回のターンになる
 - mod をホットリロードすると、モデルがもう一度 agmsg の Monitor を呼ぶ（`/clear`、resume、新しいセッション）まで watcher が止まる
 
